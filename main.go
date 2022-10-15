@@ -35,31 +35,23 @@ func main() {
 }
 
 func Run(cmd *cobra.Command, args []string) error {
-	var from int64
-	var to int64
-	now := time.Now()
+	var from time.Time
+	to := time.Now()
 	switch timePeriod {
 	case "1D":
-		from = now.AddDate(0, 0, -1).Unix()
-		to = now.Unix()
+		from = to.AddDate(0, 0, -1)
 	case "5D":
-		from = now.AddDate(0, 0, -5).Unix()
-		to = now.Unix()
+		from = to.AddDate(0, 0, -5)
 	case "3M":
-		from = now.AddDate(0, -3, 0).Unix()
-		to = now.Unix()
+		from = to.AddDate(0, -3, 0)
 	case "6M":
-		from = now.AddDate(0, -6, 0).Unix()
-		to = now.Unix()
+		from = to.AddDate(0, -6, 0)
 	case "YTD":
-		from = now.AddDate(0, 0, -now.YearDay()).Unix()
-		to = now.Unix()
+		from = time.Date(to.Year(), 1, 1, 0, 0, 0, 0, to.Location())
 	case "1Y":
-		from = now.AddDate(-1, 0, 0).Unix()
-		to = now.Unix()
+		from = to.AddDate(-1, 0, 0)
 	case "5Y":
-		from = now.AddDate(-5, 0, 0).Unix()
-		to = now.Unix()
+		from = to.AddDate(-5, 0, 0)
 	}
 
 	var stocks []Stock
@@ -70,7 +62,7 @@ func Run(cmd *cobra.Command, args []string) error {
 			code = strings.TrimSuffix(arg, "SH")
 			code += "SS"
 		}
-		s, err := DownloadStockCSV(code, from, to)
+		s, err := DownloadStockCSV(code, from.Unix(), to.Unix())
 		if err != nil {
 			return err
 		}
@@ -102,11 +94,11 @@ func Run(cmd *cobra.Command, args []string) error {
 			price := vals[priceIndex]
 			t, err := time.Parse("2006-01-02", date)
 			if err != nil {
-				return err
+				continue
 			}
 			p, err := strconv.ParseFloat(price, 64)
 			if err != nil {
-				return err
+				continue
 			}
 			stock := Stock{
 				Symbol: arg,
