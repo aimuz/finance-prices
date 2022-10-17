@@ -1,16 +1,10 @@
 package main
 
 import (
-	"encoding/csv"
 	"fmt"
 	"github.com/spf13/cobra"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 	"text/tabwriter"
 	"time"
 )
@@ -34,7 +28,18 @@ func main() {
 	}
 }
 
-func Run(cmd *cobra.Command, args []string) error {
+type PriceProvider interface {
+	Match(symbol string) bool
+	Prices(symbol string, from, to int64) ([]Stock, error)
+}
+
+var priceProviders = map[string]PriceProvider{}
+
+func Register(name string, p PriceProvider) {
+	priceProviders[name] = p
+}
+
+func Run(_ *cobra.Command, args []string) error {
 	var from time.Time
 	to := time.Now()
 	switch timePeriod {
@@ -57,64 +62,19 @@ func Run(cmd *cobra.Command, args []string) error {
 	var stocks []Stock
 	for _, arg := range args {
 		code := arg
-		switch {
-		case strings.HasSuffix(arg, "SH"):
-			code = strings.TrimSuffix(arg, "SH")
-			code += "SS"
-		}
-		s, err := DownloadStockCSV(code, from.Unix(), to.Unix())
-		if err != nil {
-			return err
-		}
-		reader := csv.NewReader(strings.NewReader(s))
-		fields, err := reader.Read()
-		if err != nil {
-			return err
-		}
-
-		var dateIndex, priceIndex int
-		for index, field := range fields {
-			switch field {
-			case "Date":
-				dateIndex = index
-			case "Close":
-				priceIndex = index
+		for _, provider := range priceProviders {
+			if !provider.Match(code) {
+				continue
 			}
-		}
-
-		for {
-			vals, err := reader.Read()
+			ss, err := provider.Prices(code, from.Unix(), to.Unix())
 			if err != nil {
-				if err == io.EOF {
-					break
-				}
 				return err
 			}
-			date := vals[dateIndex]
-			price := vals[priceIndex]
-			t, err := time.Parse("2006-01-02", date)
-			if err != nil {
-				continue
-			}
-			p, err := strconv.ParseFloat(price, 64)
-			if err != nil {
-				continue
-			}
-			stock := Stock{
-				Symbol: arg,
-				Date:   t,
-				Price:  p,
-			}
-			stocks = append(stocks, stock)
+			stocks = append(stocks, ss...)
 		}
 	}
 
-	sort.Slice(stocks, func(i, j int) bool {
-		if stocks[i].Date.Before(stocks[j].Date) {
-			return true
-		}
-		return stocks[i].Date.Equal(stocks[j].Date) && stocks[i].Symbol > stocks[j].Symbol
-	})
+	sort.Sort(Stocks(stocks))
 	w := &tabwriter.Writer{}
 	w.Init(os.Stdout, 4, 4, 0, '\t', 0)
 	defer w.Flush()
@@ -130,28 +90,19 @@ type Stock struct {
 	Price  float64
 }
 
-// DownloadStockCSV ...
-func DownloadStockCSV(code string, from, to int64) (string, error) {
-	period1 := strconv.FormatInt(from, 10)
-	period2 := strconv.FormatInt(to, 10)
-	params := url.Values{
-		"period1":              []string{period1},
-		"period2":              []string{period2},
-		"interval":             []string{"1d"},
-		"events":               []string{"history"},
-		"includeAdjustedClose": []string{"true"},
-	}
+type Stocks []Stock
 
-	// https://query1.finance.yahoo.com/v7/finance/download/000151.SZ?period1=1634204059&period2=1665740059&interval=1d&events=history&includeAdjustedClose=true
-	u := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/download/%s?%s", code, params.Encode())
-	resp, err := http.Get(u)
-	if err != nil {
-		return "", err
+func (s Stocks) Len() int {
+	return len(s)
+}
+
+func (s Stocks) Less(i, j int) bool {
+	if s[i].Date.Before(s[j].Date) {
+		return true
 	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return s[i].Date.Equal(s[j].Date) && s[i].Symbol > s[j].Symbol
+}
+
+func (s Stocks) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
 }
