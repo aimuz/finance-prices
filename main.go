@@ -79,7 +79,7 @@ func Run(_ *cobra.Command, args []string) error {
 	w.Init(os.Stdout, 4, 4, 0, '\t', 0)
 	defer w.Flush()
 	for _, stock := range stocks {
-		fmt.Fprintf(w, "P\t%s\t\"%s\"\t%.2f CNY\n", stock.Date.Format("2006-01-02"), stock.Symbol, stock.Price)
+		fmt.Fprintf(w, "P\t%s\t\"%s\"\t%.04f CNY\n", stock.Date.Format("2006-01-02"), stock.Symbol, stock.Price)
 	}
 	return nil
 }
